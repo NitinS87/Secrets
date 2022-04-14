@@ -14,6 +14,9 @@ const session = require('express-session');
 const passport = require('passport');
 const passportLocalMongoose = require('passport-local-mongoose');
 
+const GoogleStrategy = require( 'passport-google-oauth2' ).Strategy;
+const findOrCreate = require("mongoose-findorcreate")
+
 //to hash those passwords
 // const md5 = require("md5");
 //to salt and hash those password
@@ -56,6 +59,7 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
 // userSchema.plugin(encrypt, {secret: process.env.SECRET, enryptedFields: ["password"]});
 
@@ -63,12 +67,50 @@ const User = new mongoose.model("User", userSchema);
 
 passport.use(User.createStrategy());
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+// passport.serializeUser(User.serializeUser());
+// passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, cb) {
+  process.nextTick(function() {
+    cb(null, { id: user.id, username: user.username, name: user.name });
+  });
+});
+
+passport.deserializeUser(function(user, cb) {
+  process.nextTick(function() {
+    return cb(null, user);
+  });
+});
+
+passport.use(new GoogleStrategy({
+    clientID:     process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo",
+    passReqToCallback   : true
+  },
+  function(request, accessToken, refreshToken, profile, done) {
+    console.log(profile);
+
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return done(err, user);
+    });
+  }
+));
 
 app.get("/", function(req, res) {
   res.render("home");
 });
+
+app.get('/auth/google',
+  passport.authenticate('google', { scope:
+      [ "profile" ] }
+));
+
+app.get( '/auth/google/secrets',
+    passport.authenticate( 'google', {
+        successRedirect: "/secrets",
+        failureRedirect: "/login"
+}));
 app.get("/register", function(req, res) {
   res.render("register");
 });
