@@ -55,7 +55,9 @@ mongoose.connect("mongodb://localhost:27017/userDB", {
 
 const userSchema = new mongoose.Schema({
   email: String,
-  password: String
+  password: String,
+  googleId: String,
+  secret: String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -69,15 +71,24 @@ passport.use(User.createStrategy());
 
 // passport.serializeUser(User.serializeUser());
 // passport.deserializeUser(User.deserializeUser());
-passport.serializeUser(function(user, cb) {
-  process.nextTick(function() {
-    cb(null, { id: user.id, username: user.username, name: user.name });
-  });
+// passport.serializeUser(function(user, cb) {
+//   process.nextTick(function() {
+//     cb(null, { id: user.id, username: user.username, name: user.name });
+//   });
+// });
+//
+// passport.deserializeUser(function(user, cb) {
+//   process.nextTick(function() {
+//     return cb(null, user);
+//   });
+// });
+passport.serializeUser(function(user, done) {
+  done(null, user.id);
 });
 
-passport.deserializeUser(function(user, cb) {
-  process.nextTick(function() {
-    return cb(null, user);
+passport.deserializeUser(function(id, done) {
+  User.findById(id, function(err, user) {
+    done(err, user);
   });
 });
 
@@ -111,9 +122,11 @@ app.get( '/auth/google/secrets',
         successRedirect: "/secrets",
         failureRedirect: "/login"
 }));
+
 app.get("/register", function(req, res) {
   res.render("register");
 });
+
 app.get("/login", function(req, res) {
   res.render("login");
 });
@@ -123,14 +136,34 @@ app.get("/logout", function(req, res) {
   res.redirect("/");
 });
 
-app.get("/secrets", function(req, res) {
-  if (req.isAuthenticated()) {
-    res.render("secrets");
+app.get("/secrets", function(req, res){
+  User.find({"secret": {$ne: null}}, function(err, foundUsers){
+    if (err){
+      console.log(err);
+    } else {
+      if (foundUsers) {
+        res.render("secrets", {usersWithSecrets: foundUsers});
+      }
+    }
+  });
+});
+
+// app.get("/submit", function(req, res){
+//   if (req.isAuthenticated()) {
+//     res.render("submit")
+//   } else {
+//     res.redirect("/login");
+//   }
+// });
+
+app.get("/submit", function(req, res){
+  if (req.isAuthenticated()){
+    res.render("submit");
   } else {
     res.redirect("/login");
   }
-  // res.render("secrets");
 });
+
 
 app.post("/register", function(req, res) {
   //bcrypt hashing and salting
@@ -175,6 +208,7 @@ app.post("/register", function(req, res) {
     }
   });
 });
+
 app.post("/login", function(req, res) {
   // const username = req.body.username;
   // const password = md5(req.body.password);
@@ -228,6 +262,26 @@ app.post("/login", function(req, res) {
       });
     }
   })
+});
+
+app.post("/submit", function(req, res){
+  const submittedSecret = req.body.secret;
+
+//Once the user is authenticated and their session gets saved, their user details are saved to req.user.
+  // console.log(req.user.id);
+
+  User.findById(req.user.id, function(err, foundUser){
+    if (err) {
+      console.log(err);
+    } else {
+      if (foundUser) {
+        foundUser.secret = submittedSecret;
+        foundUser.save(function(){
+          res.redirect("/secrets");
+        });
+      }
+    }
+  });
 });
 
 app.listen(3000, function() {
